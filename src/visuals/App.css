@@ -70,6 +70,7 @@ h2 {
   color: var(--text-h);
   background: var(--surface-soft);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-sizing: border-box;
 }
 
 .form-group input:focus,
@@ -91,6 +92,7 @@ h2 {
   background: var(--accent);
   cursor: pointer;
   transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  box-sizing: border-box;
 }
 
 .submit-button:hover {
