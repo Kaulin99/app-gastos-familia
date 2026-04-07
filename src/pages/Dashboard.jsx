@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } fro
 import '../visuals/App.css';
 
 function Dashboard() {
-  const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwkYpFeApzNcdaf9ae2vdX6idvkOCnFly2cUC7Oz0QxAEOzGNVQhIk8ls0-fpn53ZBElQ/exec"; // Cole a sua URL
+  const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwkYpFeApzNcdaf9ae2vdX6idvkOCnFly2cUC7Oz0QxAEOzGNVQhIk8ls0-fpn53ZBElQ/exec";
   const [dadosGerais, setDadosGerais] = useState({ membros: [], locais: [], gastos: [] });
   const [filtroPessoa, setFiltroPessoa] = useState('');
 
@@ -17,30 +17,45 @@ function Dashboard() {
       .catch(err => console.error("Erro ao carregar dados:", err));
   }, []);
 
-  // Motor de Processamento de Dados (ETL no Front-end)
+  // Motor de Processamento de Dados
   const processarDadosDoGrafico = () => {
     const agrupamento = {};
     const locaisEncontrados = new Set();
 
+    if (!dadosGerais.gastos || dadosGerais.gastos.length === 0) {
+      return { dados: [], locais: [] };
+    }
+
     dadosGerais.gastos.forEach(gasto => {
-      // Aplica o filtro de pessoa (se houver alguém selecionado)
+      // Aplica o filtro de pessoa
       if (filtroPessoa && gasto.quem !== filtroPessoa) return;
 
-      // Extrai o Mês/Ano da data (Ex: "4/2026")
-      const dataObj = new Date(gasto.data);
-      const mesAno = `${dataObj.getMonth() + 1}/${dataObj.getFullYear()}`;
-      const local = gasto.local;
-      const valor = parseFloat(gasto.valor) || 0;
+      try {
+        const dataObj = new Date(gasto.data);
+        if (isNaN(dataObj.getTime())) return;
 
-      // Agrupa e soma os valores
-      if (!agrupamento[mesAno]) agrupamento[mesAno] = { mes: mesAno };
-      if (!agrupamento[mesAno][local]) agrupamento[mesAno][local] = 0;
-      
-      agrupamento[mesAno][local] += valor;
-      locaisEncontrados.add(local);
+        const mesAno = `${dataObj.getMonth() + 1}/${dataObj.getFullYear()}`;
+        const local = gasto.local || 'Outros';
+        const valor = parseFloat(gasto.valor) || 0;
+
+        // Cria o mês se não existir, já preparando o campo totalMes
+        if (!agrupamento[mesAno]) {
+          agrupamento[mesAno] = { mes: mesAno, totalMes: 0 };
+        }
+        if (!agrupamento[mesAno][local]) {
+          agrupamento[mesAno][local] = 0;
+        }
+        
+        // Soma o valor no local específico e também no total geral do mês
+        agrupamento[mesAno][local] += valor;
+        agrupamento[mesAno].totalMes += valor;
+        locaisEncontrados.add(local);
+        
+      } catch (e) {
+        console.error("Erro ao processar linha de gasto:", e);
+      }
     });
 
-    // O Recharts precisa de uma Array pura
     return {
       dados: Object.values(agrupamento),
       locais: Array.from(locaisEncontrados)
@@ -49,7 +64,6 @@ function Dashboard() {
 
   const { dados, locais } = processarDadosDoGrafico();
 
-  // Uma paleta de cores automática para os diferentes locais
   const cores = ['#4CAF50', '#2196F3', '#FFC107', '#E91E63', '#9C27B0', '#FF5722', '#00BCD4'];
 
   return (
@@ -75,7 +89,17 @@ function Dashboard() {
               <BarChart data={dados}>
                 <XAxis dataKey="mes" />
                 <YAxis />
-                <Tooltip formatter={(value) => `R$ ${value.toFixed(2)}`} />
+                <Tooltip 
+                  formatter={(value, name, props) => {
+                    // props.payload contém a linha de dados inteira daquele mês
+                    const totalDoMes = props.payload.totalMes;
+                    // Calcula a porcentagem
+                    const porcentagem = ((value / totalDoMes) * 100).toFixed(1);
+                    
+                    // Retorna o formato: R$ 150.00 (30.5%)
+                    return [`R$ ${value.toFixed(2)} (${porcentagem}%)`, name];
+                  }} 
+                />
                 <Legend />
                 {locais.map((local, index) => (
                   <Bar 
