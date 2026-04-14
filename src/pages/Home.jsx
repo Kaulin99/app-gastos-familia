@@ -14,14 +14,17 @@ function Home() {
             ➕ Adicionar Custo
           </Link>
 
-          <Link to="/configuracoes" className="submit-button" style={{ textAlign: 'center', textDecoration: 'none', backgroundColor: 'var(--border)', color: 'var(--text-h)' }}>
-            ⚙️ Configurações
-          </Link>
-
           <Link to="/dashboard" className="submit-button" style={{ textAlign: 'center', textDecoration: 'none', backgroundColor: '#2196F3', color: 'white' }}>
             📊 Ver Resumo
           </Link>
 
+         <Link to="/central-de-gastos" className="submit-button" style={{ textAlign: 'center', textDecoration: 'none', backgroundColor: '#9C27B0', color: 'white' }}>
+           📋 Histórico de Gastos
+         </Link>
+
+         <Link to="/configuracoes" className="submit-button" style={{ textAlign: 'center', textDecoration: 'none', backgroundColor: 'var(--border)', color: 'var(--text-h)' }}>
+            ⚙️ Configurações
+          </Link>
         </div>
       </div>
     </div>
