@@ -17,60 +17,106 @@ function Dashboard() {
       .catch(err => console.error("Erro ao carregar dados:", err));
   }, []);
 
-  // Motor de Processamento de Dados
+  // MOTOR DE PROCESSAMENTO (ETL TEMPORAL)
   const processarDadosDoGrafico = () => {
     const agrupamento = {};
     const locaisEncontrados = new Set();
+    const hoje = new Date();
+    
+    // Limite de projeção infinita: 12 meses a partir do mês atual
+    const limiteProjecao = new Date(hoje.getFullYear(), hoje.getMonth() + 12, 1);
 
     if (!dadosGerais.gastos || dadosGerais.gastos.length === 0) {
       return { dados: [], locais: [] };
     }
 
     dadosGerais.gastos.forEach(gasto => {
-      // Aplica o filtro de pessoa
       if (filtroPessoa && gasto.quem !== filtroPessoa) return;
 
-      try {
-        const dataObj = new Date(gasto.data);
-        if (isNaN(dataObj.getTime())) return;
+      const dataInicial = new Date(gasto.data);
+      // Ajusta para o dia 1º do mês para evitar bugs com dias 31 pulando meses curtos
+      dataInicial.setDate(1);
+      dataInicial.setHours(0, 0, 0, 0);
 
-        const mesAno = `${dataObj.getMonth() + 1}/${dataObj.getFullYear()}`;
-        const local = gasto.local || 'Outros';
-        const valor = parseFloat(gasto.valor) || 0;
+      if (isNaN(dataInicial.getTime())) return;
 
-        // Cria o mês se não existir, já preparando o campo totalMes
+      const valorTotal = parseFloat(gasto.valor) || 0;
+      const local = gasto.local || 'Outros';
+      const tipo = gasto.tipo || 'Normal';
+      const parcelas = parseInt(gasto.parcelas) || 1;
+
+      // Função ajudante para injetar valor no mês correspondente
+      const adicionarValorNoMes = (dataAlvo, valorParcial) => {
+        const mesAno = `${dataAlvo.getMonth() + 1}/${dataAlvo.getFullYear()}`;
+        
         if (!agrupamento[mesAno]) {
-          agrupamento[mesAno] = { mes: mesAno, totalMes: 0 };
+          // Salva o getTime() para podermos ordenar o gráfico cronologicamente depois
+          agrupamento[mesAno] = { mes: mesAno, totalMes: 0, sortValue: dataAlvo.getTime() };
         }
-        if (!agrupamento[mesAno][local]) {
-          agrupamento[mesAno][local] = 0;
-        }
+        if (!agrupamento[mesAno][local]) agrupamento[mesAno][local] = 0;
         
-        // Soma o valor no local específico e também no total geral do mês
-        agrupamento[mesAno][local] += valor;
-        agrupamento[mesAno].totalMes += valor;
+        agrupamento[mesAno][local] += valorParcial;
+        agrupamento[mesAno].totalMes += valorParcial;
         locaisEncontrados.add(local);
+      };
+
+      // 1. LÓGICA NORMAL
+      if (tipo === 'Normal') {
+        adicionarValorNoMes(dataInicial, valorTotal);
+      } 
+      
+      // 2. LÓGICA PARCELADO
+      else if (tipo === 'Parcelado') {
+        const valorDaParcela = valorTotal / parcelas;
+        for (let p = 0; p < parcelas; p++) {
+          const dataParcela = new Date(dataInicial.getFullYear(), dataInicial.getMonth() + p, 1);
+          adicionarValorNoMes(dataParcela, valorDaParcela);
+        }
+      } 
+      
+      // 3. LÓGICA RECORRENTE
+      else if (tipo === 'Recorrente') {
+        let dataAtualRecorrente = new Date(dataInicial.getTime());
         
-      } catch (e) {
-        console.error("Erro ao processar linha de gasto:", e);
+        // Descobre até quando esse loop vai rodar
+        let dataFim = limiteProjecao;
+        if (gasto.data_fim) {
+          const dFim = new Date(gasto.data_fim);
+          dFim.setDate(1);
+          dFim.setHours(0, 0, 0, 0);
+          // Se a data de fim for válida e menor que nosso limite de 12 meses, paramos nela
+          if (!isNaN(dFim.getTime()) && dFim < limiteProjecao) {
+            dataFim = dFim;
+          }
+        }
+
+        // Vai adicionando o valor mês a mês até bater na data limite
+        let loopCount = 0; // Trava de segurança contra loops infinitos
+        while (dataAtualRecorrente <= dataFim && loopCount < 120) {
+          adicionarValorNoMes(dataAtualRecorrente, valorTotal);
+          dataAtualRecorrente.setMonth(dataAtualRecorrente.getMonth() + 1);
+          loopCount++;
+        }
       }
     });
 
+    // Pega o objeto bagunçado, transforma numa lista e ordena do mês mais antigo pro mais novo
+    const dadosOrdenados = Object.values(agrupamento).sort((a, b) => a.sortValue - b.sortValue);
+
     return {
-      dados: Object.values(agrupamento),
+      dados: dadosOrdenados,
       locais: Array.from(locaisEncontrados)
     };
   };
 
   const { dados, locais } = processarDadosDoGrafico();
-
   const cores = ['#4CAF50', '#2196F3', '#FFC107', '#E91E63', '#9C27B0', '#FF5722', '#00BCD4'];
 
   return (
     <div className="app-container">
       <div className="app-card" style={{ maxWidth: '600px' }}>
         <Link to="/" style={{ textDecoration: 'none', fontSize: '24px' }}>⬅️</Link>
-        <h2>Resumo de Gastos 📊</h2>
+        <h2>Visão do Caixa 📊</h2>
 
         <div className="form-group" style={{ marginTop: '20px', marginBottom: '20px' }}>
           <label>Filtrar por Pessoa:</label>
@@ -91,12 +137,8 @@ function Dashboard() {
                 <YAxis />
                 <Tooltip 
                   formatter={(value, name, props) => {
-                    // props.payload contém a linha de dados inteira daquele mês
                     const totalDoMes = props.payload.totalMes;
-                    // Calcula a porcentagem
                     const porcentagem = ((value / totalDoMes) * 100).toFixed(1);
-                    
-                    // Retorna o formato: R$ 150.00 (30.5%)
                     return [`R$ ${value.toFixed(2)} (${porcentagem}%)`, name];
                   }} 
                 />
